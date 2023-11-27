@@ -1,13 +1,11 @@
 #include "modes/MeleeLimits.hpp"
+#include "modes/Melee20Button.hpp"
 #include "modes/Fixed.h"
 
 #define HISTORYLEN 5//changes in target stick position
 
-#define ANALOG_STICK_MIN 48
 #define ANALOG_DEAD_MIN (128-22)/*this is in the deadzone*/
-#define ANALOG_STICK_NEUTRAL 128
 #define ANALOG_DEAD_MAX (128+22)/*this is in the deadzone*/
-#define ANALOG_STICK_MAX 208
 #define ANALOG_CROUCH (128-50)/*this y coordinate will hold a crouch*/
 #define ANALOG_TAPJUMP (128+53)/*this Y coordinate will tap jump always (running is less)*/
 #define ANALOG_DASH_LEFT (128-64)/*this x coordinate will dash left*/
@@ -433,6 +431,28 @@ void travelTimeCalc(const uint16_t samplesElapsed,
     }
 }
 
+void limitWavedashAngle(uint8_t *prelimAX, uint8_t *prelimAY) {
+    if(*prelimAX >= ANALOG_DEAD_MIN && *prelimAX <= ANALOG_DEAD_MAX) {
+        return;
+    }
+    if(*prelimAY >= ANALOG_DEAD_MIN && *prelimAY <= ANALOG_DEAD_MAX) {
+        return;
+    }
+
+    int8_t xCoord = *prelimAX - ANALOG_STICK_NEUTRAL;
+    int8_t yCoord = *prelimAY - ANALOG_STICK_NEUTRAL;
+    uint8_t xCoordAbs = abs(xCoord);
+    uint8_t yCoordAbs = abs(yCoord);
+
+    if (xCoordAbs * MX_SHIELD_TILT_Y > yCoordAbs * MX_SHIELD_TILT_X) {
+        uint8_t xAdjusted = yCoordAbs * MX_SHIELD_TILT_X / MX_SHIELD_TILT_Y;
+        *prelimAX = xCoord >= 0 ? ANALOG_STICK_NEUTRAL + xAdjusted : ANALOG_STICK_NEUTRAL - xAdjusted;
+    } else if (yCoordAbs * MY_SHIELD_TILT_X > xCoordAbs * MY_SHIELD_TILT_Y) {
+        uint8_t yAdjusted = xCoordAbs * MY_SHIELD_TILT_Y / MY_SHIELD_TILT_X;
+        *prelimAY = yCoord >= 0 ? ANALOG_STICK_NEUTRAL + yAdjusted : ANALOG_STICK_NEUTRAL - yAdjusted;
+    }
+}
+
 void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
                   const abtest whichAB,
                   const InputState &inputs,
@@ -508,16 +528,10 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
                    prelimAX,
                    prelimAY);
 
-    //If we're doing a diagonal airdodge, make travel time instant to prevent inconsistent wavedash angles
-    //this only fully works for neutral socd right now
-    //this is a catchall to force the latest output
-    //however, we do want to make it be overridden by the sdi nerfs so this happens first
-    /*
-    if((inputs.left != inputs.right) && (inputs.down != inputs.up) && inputs.down && (inputs.r || inputs.l)) {
-        prelimAX = rawOutputIn.leftStickX;
-        prelimAY = rawOutputIn.leftStickY;
+    //Enforce a consistent minimum angle for the L/R NDM
+    if(inputs.l || inputs.r) {
+        limitWavedashAngle(&prelimAX, &prelimAY);
     }
-    */
 
     //detect an input that gives >50% pivot probability given travel time
     //if we are in a new pivot zone, record the new zone
@@ -778,14 +792,6 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
            (xIn > ANALOG_STICK_NEUTRAL && ANALOG_STICK_NEUTRAL > prelimAX) ||
            (yIn > ANALOG_STICK_NEUTRAL && ANALOG_STICK_NEUTRAL > prelimAY)) {
             prelimTT = max(prelimTT, TRAVELTIME_CROSS);
-        }
-        */
-        //If we're doing a diagonal airdodge, make travel time instant to prevent inconsistent wavedash angles
-        //this only fully works for neutral socd right now
-        //it doesn't fully work either, so I'm going to put a catchall in the outer loop
-        /*
-        if((inputs.left != inputs.right) && (inputs.down != inputs.up) && inputs.down && (inputs.r || inputs.l)) {
-            prelimTT = 0;
         }
         */
         aHistory[currentIndexA].tt = prelimTT;

@@ -2,10 +2,6 @@
 
 //unified angles
 
-#define ANALOG_STICK_MIN 48
-#define ANALOG_STICK_NEUTRAL 128
-#define ANALOG_STICK_MAX 208
-
 Melee20Button::Melee20Button(socd::SocdType socd_type, Melee20ButtonOptions options) {
     socd_type = MELEE_SOCD;
     _socd_pair_count = 4;
@@ -95,53 +91,58 @@ void Melee20Button::UpdateAnalogOutputs(InputState &inputs, OutputState &outputs
 
         /* Up B angles */
         if (directions.diagonal) {
-            if (!inputs.b) {
-                // 6750 3125 - 24.84deg - 54 25 - modX
-                // 6750 3625 - 28.24deg - 54 29 - modX + cDown
+            if (inputs.l || inputs.r) {
+                // 6625 3375 - 27.00 - 53 27 - modX + L/R
+                // Wavedash travel time is handled by an angle restriction on output coords
+                outputs.leftStickX = 128 + (directions.x * MX_SHIELD_TILT_X);
+                outputs.leftStickY = 128 + (directions.y * MX_SHIELD_TILT_Y);
+            } else if (!inputs.b) {
+                // 7250 3125 - 23.32deg - 58 25 - modX
+                // 7125 3750 - 27.76deg - 57 30 - modX + cDown
                 // 6625 4125 - 31.91deg - 53 33 - modX + cLeft
-                // 6375 4625 - 35.96deg - 51 37 - modX + cUp
-                // 6125 5125 - 39.92deg - 49 41 - modX + cRight
-                outputs.leftStickX = 128 + (directions.x * 54);
+                // 6625 4875 - 36.35deg - 53 39 - modX + cUp
+                // 6125 5250 - 40.60deg - 49 42 - modX + cRight
+                outputs.leftStickX = 128 + (directions.x * 58);
                 outputs.leftStickY = 128 + (directions.y * 25);
                 if (inputs.c_down) {
-                    outputs.leftStickX = 128 + (directions.x * 54);
-                    outputs.leftStickY = 128 + (directions.y * 29);
+                    outputs.leftStickX = 128 + (directions.x * 57);
+                    outputs.leftStickY = 128 + (directions.y * 30);
                 }
                 if (inputs.c_left) {
                     outputs.leftStickX = 128 + (directions.x * 53);
                     outputs.leftStickY = 128 + (directions.y * 33);
                 }
                 if (inputs.c_up) {
-                    outputs.leftStickX = 128 + (directions.x * 51);
-                    outputs.leftStickY = 128 + (directions.y * 37);
+                    outputs.leftStickX = 128 + (directions.x * 53);
+                    outputs.leftStickY = 128 + (directions.y * 39);
                 }
                 if (inputs.c_right) {
                     outputs.leftStickX = 128 + (directions.x * 49);
-                    outputs.leftStickY = 128 + (directions.y * 41);
+                    outputs.leftStickY = 128 + (directions.y * 42);
                 }
             } else {
                 /* Extended Up B Angles */
-                // 9000 4125 - 24.62deg - 72 33 - modX + B
-                // 8750 4750 - 28.50deg - 70 38 - modX + B + cDown
-                // 8500 5250 - 31.70deg - 68 42 - modX + B + cLeft
-                // 7250 5250 - 35.91deg - 58 42 - modX + B + cUp
-                // 6375 5250 - 39.47deg - 51 42 - modX + B + cRight
-                outputs.leftStickX = 128 + (directions.x * 72);
+                // 9125 3875 - 23.01deg - 73 33 - modX + B
+                // 8750 4625 - 27.86deg - 70 37 - modX + B + cDown
+                // 8375 5250 - 32.08deg - 67 42 - modX + B + cLeft
+                // 7125 5250 - 36.38deg - 57 42 - modX + B + cUp
+                // 6125 5250 - 40.60deg - 49 42 - modX + B + cRight
+                outputs.leftStickX = 128 + (directions.x * 73);
                 outputs.leftStickY = 128 + (directions.y * 33);
                 if (inputs.c_down) {
                     outputs.leftStickX = 128 + (directions.x * 70);
-                    outputs.leftStickY = 128 + (directions.y * 38);
+                    outputs.leftStickY = 128 + (directions.y * 37);
                 }
                 if (inputs.c_left) {
-                    outputs.leftStickX = 128 + (directions.x * 68);
+                    outputs.leftStickX = 128 + (directions.x * 67);
                     outputs.leftStickY = 128 + (directions.y * 42);
                 }
                 if (inputs.c_up) {
-                    outputs.leftStickX = 128 + (directions.x * 58);
+                    outputs.leftStickX = 128 + (directions.x * 57);
                     outputs.leftStickY = 128 + (directions.y * 42);
                 }
                 if (inputs.c_right) {
-                    outputs.leftStickX = 128 + (directions.x * 51);
+                    outputs.leftStickX = 128 + (directions.x * 49);
                     outputs.leftStickY = 128 + (directions.y * 42);
                 }
             }
@@ -173,7 +174,12 @@ void Melee20Button::UpdateAnalogOutputs(InputState &inputs, OutputState &outputs
 
         /* Up B angles */
         if (directions.diagonal) {
-            if (!inputs.b) {
+            if (inputs.l || inputs.r) {
+                // 3625 7125 - 26.97 - 29 57 - modX + L/R
+                // Wavedash travel time is handled by an angle restriction on output coords
+                outputs.leftStickX = 128 + (directions.x * MY_SHIELD_TILT_X);
+                outputs.leftStickY = 128 + (directions.y * MY_SHIELD_TILT_Y);
+            } else if (!inputs.b) {
                 // 3250 7625 - 23.09deg - 26 61 - modY
                 // 3625 7000 - 27.38deg - 29 56 - modY + cDown
                 // 4375 7000 - 32.01deg - 35 56 - modY + cLeft
