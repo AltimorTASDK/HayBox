@@ -60,7 +60,7 @@ void GamecubeBackend::SendReport() {
     static uint sampleCount = 1;
     static uint sampleSpacing = 0;
     static uint16_t loopTime = 0;
-    const uint fastestLoop = 950; //fastest possible loop; platform-dependent
+    const uint fastestLoop = 975; //fastest possible loop; platform-dependent
     //const uint fastestLoop = 450; //fastest possible loop; platform-dependent
 
     //read how long this loop took
@@ -140,6 +140,11 @@ void GamecubeBackend::SendReport() {
             */
             detect = true;//stop scanning inputs briefly and re-measure timings
             loopCount = 0;
+            sampleCount = 1;
+            sampleSpacing = 0;
+            oldSampleTime = 0;
+            newSampleTime = 0;
+            loopTime = 0;
         }
         //run the delay procedure based on samplespacing
         //in the stock arduino software, it samples 850 us after the end of the poll response
@@ -150,7 +155,7 @@ void GamecubeBackend::SendReport() {
             digitalWrite(21, LOW);
 #endif
 
-            const uint16_t nerfTime = 200/4;
+            const uint16_t nerfTime = 250/4;
             const uint16_t computationTime = 700/4 + nerfTime;//*_nerfOn;//depends on the platform; 4us steps.
             //700 microseconds is sufficient with no travel time computation
             const uint16_t targetTime = ((i+1)*sampleSpacing)-computationTime;

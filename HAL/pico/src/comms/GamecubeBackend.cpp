@@ -181,6 +181,11 @@ void GamecubeBackend::SendReport() {
         if(loopTime > minLoop+(minLoop >> 1)) {//if the loop time is 50% longer than expected
             detect = true;//stop scanning inputs briefly and re-measure timings
             loopCount = 0;
+            sampleCount = 1;
+            sampleSpacing = 0;
+            oldSampleTime = 0;
+            newSampleTime = 0;
+            loopTime = 0;
         }
     }
 

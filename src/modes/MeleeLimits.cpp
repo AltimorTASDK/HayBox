@@ -31,6 +31,8 @@
 #define TIMELIMIT_DEBOUNCE (6*250)//units of 4us; 6ms;
 #define TIMELIMIT_SIMUL (2*250)//units of 4us; 3ms: if the latest inputs are less than 2 ms apart then don't nerf cardiag
 
+#define TIMELIMIT_TAPSHUTOFF 16000//4 frames for tap jump shutoff
+
 //not used #define TIMELIMIT_DASH 60000//(16*15*250)//units of 4us; last dash time prior to a pivot input; 15 frames
 
 //not used #define TIMELIMIT_QCIRC 24000//(16*6*250)//units of 4us; 6 frames
@@ -200,6 +202,14 @@ uint8_t pivotZone(const uint8_t x) {
     return result;
 }
 
+uint8_t uptiltShutoffZone(const uint8_t y) {
+    uint8_t result = 0b0000'0000;
+    if(y > ANALOG_DEAD_MAX && y < ANALOG_TAPJUMP) {
+        result = result | ZONE_U;
+    }
+    return result;
+}
+
 //not a general purpose popcount, this is specifically for zones
 uint8_t popcount_zone(const uint8_t bitsIn) {
     uint8_t count = 0;
@@ -364,22 +374,24 @@ void travelTimeCalc(const uint16_t samplesElapsed,
                     const uint8_t destX,
                     const uint8_t destY,
                     const travelType type,
-                    bool &oldChange,//apply tt if false; if the time gets too long, set it to true
+                    bool &oldChange,//if the time gets too long, set it to true
+                    bool &doneTraveling,//apply tt if false; when travel time is done, set it to true
                     uint8_t &outX,
                     uint8_t &outY) {
     //check for old data; this prevents overflow from causing issues
     if(samplesElapsed > 5*16*2) {//5 frames * 16 ms * max 2 samples per frame
         oldChange = true;
+        doneTraveling = true;
     }
     const uint16_t timeElapsed = samplesElapsed*sampleSpacing;//units of 4 us
     if(type == T_Lin) {
         const uint16_t travelTimeElapsed = timeElapsed/msTravel;//250 times the fraction of the travel time elapsed
 
         //For the following 256s, they used to be 250, but AVR had division issues
-            // and would only be able to reach a value of 6 when returning to neutral,
-            // from the right only.
-            //Switching to 256 fixed it somehow, at the expense of 2.4% greater travel time.
-            const uint16_t cappedTT = min(256, travelTimeElapsed);
+        // and would only be able to reach a value of 6 when returning to neutral,
+        // from the right only.
+        //Switching to 256 fixed it somehow, at the expense of 2.4% greater travel time.
+        const uint16_t cappedTT = min(256, travelTimeElapsed);
 
         const int16_t dX = ((destX-startX)*cappedTT)/256;
         const int16_t dY = ((destY-startY)*cappedTT)/256;
@@ -396,12 +408,13 @@ void travelTimeCalc(const uint16_t samplesElapsed,
         } else {
             outX = destX;
             outY = destY;
+            doneTraveling = true;
         }
     } else{
         uint16_t usTravel4 = msTravel*250;//units of 4 us
         const uint16_t clampedElapsed = min(usTravel4, timeElapsed);
         if(clampedElapsed == usTravel4) {
-            oldChange = true;
+            doneTraveling = true;
         }
         const Fixed88 timeElapsedPercent = fastDiv(intToFixed(int8_t(timeElapsed>>6)), intToFixed(int8_t(usTravel4>>6)));
 
@@ -425,7 +438,7 @@ void travelTimeCalc(const uint16_t samplesElapsed,
         outY = uint8_t(fixedToInt(fixedY) + 128);
     }
 
-    if(oldChange || msTravel == 0) {
+    if(oldChange || doneTraveling || msTravel == 0) {
         outX = destX;
         outY = destY;
     }
@@ -476,6 +489,7 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
     //    Increase travel time on cardinal and lock out later diagonals.
 
     static bool oldA = true;
+    static bool doneTraveling = true;
 
     static uint16_t currentTime = 0;
     currentTime++;
@@ -525,6 +539,7 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
                    aHistory[currentIndexA].y_end,
                    delayType,
                    oldA,
+                   doneTraveling,
                    prelimAX,
                    prelimAY);
 
@@ -586,6 +601,15 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
         direction = P_None;
     }
 
+    //tap jump shutoff
+    static uint8_t uptiltSamples = 0;
+    if(prelimAY > ANALOG_DEAD_MAX) {
+        uptiltSamples = min(uptiltSamples+1,254);
+    } else {
+        uptiltSamples = 0;
+    }
+    const uint16_t timeSinceNotUptilt = uptiltSamples*sampleSpacing;
+
     //actually apply the nerfs
     //debug c-stick output
     /*
@@ -604,19 +628,6 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
         pivotTilt = true;
         upTilt = true;
     }
-    /*actually, pivot ftilt doesn't need nerfing
-    //if it's a ftilt coordinate, make X dash/smash
-    //we need to use raw input in instead of prelim because that gets caught by travel time for a moment
-    if(direction == P_Leftright && rawOutputIn.leftStickX < ANALOG_DEAD_MIN) {
-        //prelimAX = 0;
-        pivotTilt = true;
-    }
-    if(direction == P_Rightleft && rawOutputIn.leftStickX > ANALOG_DEAD_MAX) {
-        //prelimAX = 255;
-        pivotTilt = true;
-    }
-    */
-
     if(pivotTilt) {
         //If there's a pivot tilt, preserve the angle as best as possible but maximize the radius
         int8_t xCoord = prelimAX - ANALOG_STICK_NEUTRAL;
@@ -635,10 +646,15 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
             prelimAX = ANALOG_STICK_NEUTRAL + xCoord * stretchMult / 2;
             prelimAY = ANALOG_STICK_NEUTRAL + yCoord * stretchMult / 2;
         }
+        if(upTilt && timeSinceNotUptilt > TIMELIMIT_TAPSHUTOFF) {
+            if(direction == P_Leftright) {
+                prelimAX = ANALOG_STICK_NEUTRAL - 30;
+            } else if(direction == P_Rightleft) {
+                prelimAX = ANALOG_STICK_NEUTRAL + 30;
+            }
+            prelimAY = ANALOG_STICK_NEUTRAL +30;
+        }
     }
-
-    //4 frames of >deadzone -> no tap jump
-
 
     //if it's a crouch to upward coordinate too quickly, make Y jump even if a tilt was desired
     static uint16_t timeSinceCrouch = 100;//must be < 65535 when multiplied by 500, the longest possible sampleSpacing, but bigger than the (timelimit/250)
@@ -667,7 +683,7 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
 
     //if it's wank sdi (TODO) or diagonal tap SDI, lock out the cross axis
     const uint8_t sdi = isTapSDI(sdiZoneHist, currentIndexSDI, currentTime, sampleSpacing);
-    static bool wankNerf = false;
+    static bool sdiIsNerfed = false;
     if(sdi & (BITS_SDI_TAP_DIAG | BITS_SDI_TAP_CRDG | BITS_SDI_WANK)){
         if(sdi & (ZONE_L | ZONE_R)) {
             //lock the cross axis
@@ -679,7 +695,7 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
             //prelimAX = aHistory[currentIndexA].x_start;
             //make sure that future cardinal travel time begins where it was before
             //aHistory[currentIndexA].x_end = prelimAX;
-            wankNerf = true;
+            sdiIsNerfed = true;
         } else if(sdi & (ZONE_U | ZONE_D)) {
             //lock the cross axis
             prelimAX = ANALOG_STICK_NEUTRAL;
@@ -690,7 +706,7 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
             //prelimAY = aHistory[currentIndexA].y_start;
             //make sure that future cardinal travel time begins where it was before
             //aHistory[currentIndexA].y_end = prelimAY;
-            wankNerf = true;
+            sdiIsNerfed = true;
         }//one or the other should occur
         //debug to see if SDI was detected
         /*
@@ -700,12 +716,15 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
         if(sdi & BITS_SDI_TAP_CRDG) {
             prelimCY = 200;
         }
+        if(sdi & BITS_SDI_WANK) {
+            prelimCX = 10;
+        }
         */
-    } else if(wankNerf) {
+    } else if(sdiIsNerfed) {
         aHistory[currentIndexA].x_end = aHistory[currentIndexA].x;
         aHistory[currentIndexA].y_end = aHistory[currentIndexA].y;
         if(prelimAX == ANALOG_STICK_NEUTRAL && prelimAY == ANALOG_STICK_NEUTRAL) {
-            wankNerf = false;
+            sdiIsNerfed = false;
         }
     }
 
@@ -728,6 +747,7 @@ void limitOutputs(const uint16_t sampleSpacing,//in units of 4us
     //if we have a new coordinate, record the new info, the travel time'd locked out stick coordinate, and set travel time
     if(aHistory[currentIndexA].x != rawOutputIn.leftStickX || aHistory[currentIndexA].y != rawOutputIn.leftStickY) {
         oldA = false;
+        doneTraveling = false;
         const uint8_t oldIndexA = currentIndexA;
         currentIndexA = (currentIndexA + 1) % HISTORYLEN;
 
